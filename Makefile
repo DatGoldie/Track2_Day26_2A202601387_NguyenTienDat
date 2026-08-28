@@ -1,6 +1,6 @@
 PY := python3.12
 VENV := .venv
-BIN := $(VENV)/bin
+BIN := $(VENV)/Scripts
 BOT ?= rookie
 # `AS` is a GNU make BUILT-IN (the assembler, default `as`), so `AS ?= all`
 # never fired and a plain `make spar BOT=rookie` ran `spar.py --as as`, which
@@ -73,9 +73,9 @@ check-referee:
 
 # The world artifact is exported by the instructor; without it nothing can run.
 check-world:
-	@ls kit/world/*/manifest.json >/dev/null 2>&1 		|| (echo "no world in kit/world/ - ask your instructor for the world artifact" && exit 1)
+	@$(BIN)/python -c "import glob, sys; sys.exit(0 if glob.glob('kit/world/*/manifest.json') else 1)" || (echo "no world in kit/world/ - ask your instructor for the world artifact" && exit 1)
 	@$(BIN)/python -c "import json,glob; m=json.load(open(sorted(glob.glob('kit/world/*/manifest.json'))[-1])); 	 print('world', m.get('world_id'), '-', sum(m.get('counts',{}).values()), 'pages')"
-	@! ls kit/world/*/truth.json >/dev/null 2>&1 || (echo "FAIL: truth.json must never ship to students" && exit 1)
+	@$(BIN)/python -c "import glob, sys; sys.exit(1 if glob.glob('kit/world/*/truth.json') else 0)" || (echo "FAIL: truth.json must never ship to students" && exit 1)
 
 doctor: check-no-key check-world check-referee validate
 	@echo "ready to spar."
