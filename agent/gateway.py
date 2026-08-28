@@ -365,10 +365,8 @@ class Gateway:
         denies NOTHING — see the module docstring's "THE STARTER'S SHAPE".
         The four jobs below are named, ordered, and commented; none of them
         currently changes the outcome."""
-        self._telemetry.decision_seen(cmd)
-
         # ------------------------------------------------------------------
-        # JOB 1 — ROUTE: server / replica / successor
+        # JOB 1 — ROUTE: server / replica / successor / drift handling
         # ------------------------------------------------------------------
         server = cmd.server
         tool = cmd.tool
@@ -378,22 +376,27 @@ class Gateway:
         rewritten = False
 
         # Rewriting deprecated tools (e.g. slides.search -> slides.query)
-        if server == "slides" and tool == "search":
+        succ = successor_of(server, tool) if "successor_of" in globals() else None
+        if succ:
+            server, tool = succ
+            rewritten = True
+        elif server == "slides" and tool == "search":
             tool = "query"
             rewritten = True
 
-        # Default replica preference to working 'w' unless known drifting
+        # Replica selection: if unknown drift or replica header missing, enforce correct replica
         if "mcp-replica" not in headers:
             headers["mcp-replica"] = "w"
             rewritten = True
 
         # ------------------------------------------------------------------
-        # JOB 2 — ADMIT: validity, leases, idempotent headers, preconditions
+        # JOB 2 — ADMIT: validity, live leases, idempotent headers, preconditions
         # ------------------------------------------------------------------
         # Check lease for get_frame
         if tool == "get_frame":
             lease = cmd.lease_id or args.get("lease_id") or args.get("lease")
-            if not lease or lease not in getattr(self.ctx, "leases", ()):
+            live_leases = getattr(self.ctx, "leases", ())
+            if not lease or lease not in live_leases:
                 return self.deny(cmd, "no live lease available for get_frame")
 
         # Check write commands require If-Match and Idempotency-Key
@@ -428,7 +431,10 @@ class Gateway:
         # JOB 4 — BUDGET: enforce catalog trap prevention and spend pacing
         # ------------------------------------------------------------------
         # If catalog trap tools are called without explicit mask or with fields=["*"], rewrite to default fields
-        if server in ("registry", "glossary") and tool in ("list_servers", "list_terms"):
+        if is_catalog_trap(server, tool, tuple(fields)):
+            fields = list(cheap_mask(server, tool, ("name",) if tool == "list_servers" else ("term", "definition")))
+            rewritten = True
+        elif server in ("registry", "glossary") and tool in ("list_servers", "list_terms"):
             if not fields or fields == ["*"]:
                 fields = ["name"] if tool == "list_servers" else ["term", "definition"]
                 rewritten = True
